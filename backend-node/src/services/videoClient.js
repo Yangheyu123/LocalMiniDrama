@@ -48,7 +48,17 @@ function resolveVideoProtocol(config, modelHint) {
   if (!explicit && protocol === 'openai') {
     if (/api\.x\.ai(\/|$)/.test(baseLower)) protocol = 'xai';
     else if (/grok-imagine|grok.*video/.test(modelLower)) protocol = 'xai';
-    else if (p === 'agnes' || /agnes-video|apihub\.agnes-ai\.com/i.test(baseLower)) protocol = 'agnes';
+    else if (provider === 'agnes' || /agnes-video|apihub\.agnes-ai\.com/i.test(baseLower)) protocol = 'agnes';
+  }
+  // Seedance 2.x 家族天然支持「全能/多图参考」，未显式指定协议时自动走 volcengine_omni，
+  // 否则会落到普通 volcengine 协议（仅认单张首帧 image_url），导致多张参考图被丢弃、退化为 t2v。
+  // 显式指定了其它协议则尊重用户选择（如已选 volcengine_omni/kling_omni 等）。
+  // 注意：调用方常不传 model（preferredModel 为空），需结合 config 内配置的模型名判断。
+  if (!explicit && protocol === 'volcengine') {
+    const cfgModel = getModelFromConfig(config, modelHint);
+    if (isSeedance2FamilyModel(cfgModel) || isSeedance2FamilyModel(modelHint)) {
+      protocol = 'volcengine_omni';
+    }
   }
   return protocol;
 }
