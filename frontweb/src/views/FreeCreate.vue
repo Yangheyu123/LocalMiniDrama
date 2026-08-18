@@ -267,12 +267,14 @@ const chosenAssets = computed(() => selectedOrder.value.map((id) => assets.value
 const chosenImageAssets = computed(() => chosenAssets.value.filter((asset) => asset.type === 'image'))
 const visibleAssets = computed(() => assets.value.filter((asset) => assetScope.value === 'all' || (assetScope.value === 'project' ? Number(asset.drama_id) === projectDramaId.value : !asset.drama_id)))
 const activeJob = computed(() => {
+  const selected = shotHistory.value.find((job) => String(job.id) === String(selectedHistoryJobId.value))
   const adopted = shotHistory.value.find((job) => job.is_current)
   const bound = shotHistory.value.find((job) => String(job.id) === String(currentShot.value?.omni_job_id))
-  const selected = shotHistory.value.find((job) => String(job.id) === String(selectedHistoryJobId.value))
-  // The central player is the delivery surface, so inspecting a history card
-  // must not replace the version currently adopted by the storyboard.
-  return adopted || bound || selected || shotHistory.value[0] || null
+  // A history-card click is a preview action: play that version without
+  // changing the storyboard's adopted version. The previous priority order
+  // always returned `adopted`, so clicked records were highlighted but could
+  // never replace the source of the central player.
+  return selected || adopted || bound || shotHistory.value[0] || null
 })
 const activeVideoUrl = computed(() => activeJob.value?.videoUrl || currentShot.value?.video_url || '')
 const topMediaLayerId = computed(() => mediaLayers.value.at(-1)?.id || null)
@@ -462,7 +464,21 @@ function historyPoster(job) {
 }
 function containWorkbenchScroll(event) {
   if (!event.deltaY || !(event.target instanceof Element)) return
-  const panel = event.target.closest('.shot-list, .creation-panel, .material-pool, .selected-assets, .frame-picker-grid')
+  // A long prompt is edited in Element Plus' native textarea.  It must keep
+  // its own wheel/scrollbar behavior; only stop propagation at its boundary
+  // so the surrounding fixed storyboard workbench never scrolls away.
+  const textarea = event.target.closest('textarea.el-textarea__inner')
+  if (textarea) {
+    if (textarea.scrollHeight <= textarea.clientHeight) {
+      event.preventDefault()
+      return
+    }
+    const atTop = textarea.scrollTop <= 0
+    const atBottom = textarea.scrollTop + textarea.clientHeight >= textarea.scrollHeight - 1
+    if ((event.deltaY < 0 && atTop) || (event.deltaY > 0 && atBottom)) event.preventDefault()
+    return
+  }
+  const panel = event.target.closest('.shot-list, .creation-panel, .shot-script, .material-pool, .selected-assets, .frame-picker-grid')
   // The player area itself must never become a wheel-scrolling surface. This
   // also prevents a list at its boundary from chaining the page underneath it.
   if (!panel || panel.scrollHeight <= panel.clientHeight) {

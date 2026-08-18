@@ -21,6 +21,11 @@ test('storyboard navigation uses real video, including retained source after pos
   assert.doesNotMatch(freeCreate, /storyboard-placeholder\.svg|shotCover\(/)
 })
 
+test('clicking a completed history record previews it without changing the adopted version', () => {
+  assert.match(freeCreate, /function selectHistoryJob\(job\) \{ playOnSelection\.value = true; selectedHistoryJobId\.value = job\.id \}/)
+  assert.match(freeCreate, /return selected \|\| adopted \|\| bound \|\| shotHistory\.value\[0\] \|\| null/)
+})
+
 test('embedded storyboard confines wheel scrolling to its side panels', () => {
   assert.match(freeCreate, /\.project-storyboard-page \.shot-list\{flex:1 1 auto;min-height:0\}/)
   assert.match(freeCreate, /@media\(min-width:761px\)\{\.center-stage\{min-height:0;overflow:hidden\}\.shot-script\{flex:1 1 auto;min-height:0;overflow-y:auto;overscroll-behavior-y:contain\}/)
@@ -30,6 +35,13 @@ assert.match(freeCreate, /Desktop free-create uses a fixed-height workbench too/
 assert.match(freeCreate, /\.shot-panel\{overflow:hidden\}\.shot-list\{flex:1 1 auto;min-height:0\}/)
   assert.match(freeCreate, /\.omni-page\.embedded\.project-storyboard-page\{position:sticky!important;top:58px;z-index:20;height:calc\(100dvh - 58px\)!important/)
   assert.match(filmCreate, /\.storyboard-stage-active \.omni-page\.embedded\.project-storyboard-page\{position:static!important;top:auto;height:auto!important;min-height:0!important;overflow:hidden!important;flex:1/)
+})
+
+test('long prompt text keeps an independently scrollable textarea', () => {
+  const promptEditor = readFileSync(new URL('../src/components/OmniAssetPromptEditor.vue', import.meta.url), 'utf8')
+  assert.match(freeCreate, /const textarea = event\.target\.closest\('textarea\.el-textarea__inner'\)/)
+  assert.match(freeCreate, /event\.target\.closest\('\.shot-list, \.creation-panel, \.shot-script,/)
+  assert.match(promptEditor, /overflow-y: auto; overscroll-behavior-y: contain; scrollbar-gutter: stable/)
 })
 
 test('project settings communicate first-shot master, inherited and override states', () => {
