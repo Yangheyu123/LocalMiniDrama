@@ -42,7 +42,7 @@
           <el-button class="btn-theme" :title="isDark ? '切换到浅色模式' : '切换到暗色模式'" @click="toggleTheme">
             <el-icon><Sunny v-if="isDark" /><Moon v-else /></el-icon>
             {{ isDark ? '浅色' : '暗色' }}
-          </el-button><el-button class="btn-ai-config" @click="showAiConfigDialog = true">
+          </el-button><el-button v-if="isAdmin" class="btn-ai-config" @click="showAiConfigDialog = true">
             <el-icon><Setting /></el-icon>
             AI配置
           </el-button>
@@ -1545,7 +1545,8 @@
             </div>
           </el-form-item>
         </div>
-        <p class="config-tip">文本/图片/视频使用的模型以「<el-link type="primary" underline="never" @click="showAiConfigDialog = true">AI 配置</el-link>」中设为默认的为准。</p>
+        <p class="config-tip" v-if="isAdmin">文本/图片/视频使用的模型以「<el-link type="primary" underline="never" @click="showAiConfigDialog = true">AI 配置</el-link>」中设为默认的为准。</p>
+        <p class="config-tip" v-else>文本、图片和视频模型由项目分组统一配置；请联系组管理员或运营管理员调整。</p>
         <div class="merge-format-preview" aria-label="输出格式预览">
           <div class="merge-format-frame" :class="{ landscape: ['16:9', '4:3', '3:2', '21:9'].includes(projectAspectRatio), square: projectAspectRatio === '1:1' }"><span>{{ projectAspectRatio }}</span><b>{{ videoResolution }}</b></div>
           <dl><div><dt>字幕</dt><dd>{{ videoSubtitle ? '开启' : '关闭' }}</dd></div><div><dt>对白</dt><dd>{{ videoBurnDialogue ? '开启' : '关闭' }}</dd></div><div><dt>水印</dt><dd>{{ videoWatermark ? '开启' : '关闭' }}</dd></div></dl>
@@ -2566,7 +2567,7 @@
     </el-dialog>
 
     <!-- AI 配置弹窗（不跳转，避免本页内容丢失） -->
-    <el-dialog v-model="showAiConfigDialog" title="AI 配置" width="90%" destroy-on-close class="ai-config-dialog">
+    <el-dialog v-if="isAdmin" v-model="showAiConfigDialog" title="AI 配置" width="90%" destroy-on-close class="ai-config-dialog">
       <AIConfigContent v-if="showAiConfigDialog" />
     </el-dialog>
 
@@ -2641,6 +2642,7 @@ const store = useFilmStore()
 const genStore = useGenerationTaskStore()
 const { isDark, toggle: toggleTheme } = useTheme()
 const { videoResolution: storeVideoResolution } = storeToRefs(store)
+const isAdmin = computed(() => JSON.parse(localStorage.getItem('lmd_auth_user') || 'null')?.console_access === true)
 
 // ── Composable: Navigation ─────────────────────────────
 const { navCollapsed, storyboardMenuExpanded, toggleNav, scrollToTop, scrollToAnchor } = useNavigation()

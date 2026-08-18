@@ -31,7 +31,7 @@
             <el-button v-if="focusRecord" type="primary" size="large" @click="openRecord(focusRecord)">继续制作</el-button>
             <el-button size="large" @click="goNewProject"><el-icon><Plus /></el-icon>新建短剧</el-button>
           </div>
-          <div v-if="heroVideos.length > 1" class="hero-video-controls" aria-label="主页视频轮播">
+          <div class="hero-mode-switch" aria-label="主页背景来源"><button :class="{ active: heroMode === 'default' }" @click="switchHeroMode('default')">系统默认</button><button :class="{ active: heroMode === 'recent' }" @click="switchHeroMode('recent')">最近作品</button></div><div v-if="heroVideos.length > 1" class="hero-video-controls" aria-label="主页视频轮播">
             <button type="button" aria-label="上一段视频" @click="previousHeroVideo">←</button>
             <span class="hero-video-count" aria-live="polite">{{ heroVideoIndex + 1 }} / {{ heroVideos.length }}</span>
             <button type="button" aria-label="下一段视频" @click="advanceHeroVideo">→</button>
@@ -122,11 +122,6 @@
           </div>
         </section>
 
-        <section v-if="!recordsOpen && !loading && !dramas.length && !omniProjects.length" class="empty-workspace">
-          <h2>暂无项目</h2>
-          <div><el-button type="primary" size="large" @click="goNewProject">创建短剧项目</el-button><el-button size="large" :loading="importing" @click="triggerImport">导入已有项目</el-button></div>
-          <div v-if="exampleList.length" class="empty-examples"><small>或从示例开始：</small><el-button v-for="ex in exampleList" :key="ex.filename" size="small" :loading="importingExample === ex.filename" @click="onImportExample(ex)">{{ ex.name }}</el-button></div>
-        </section>
       </div>
     </main>
 
@@ -164,7 +159,7 @@
     </el-dialog>
 
     <!-- AI 配置弹窗 -->
-    <el-dialog v-model="showAiConfigDialog" title="AI 配置" width="90%" destroy-on-close>
+    <el-dialog v-if="isAdmin" v-model="showAiConfigDialog" title="AI 配置" width="90%" destroy-on-close>
       <AIConfigContent v-if="showAiConfigDialog" />
     </el-dialog>
 
@@ -404,7 +399,8 @@ function handleHeaderCommand(command) {
   else if (command === 'tools') router.push('/ai-tools')
   else if (command === 'import') triggerImport()
   else if (command === 'deleted') manageDeletedOmniProjects()
-  else if (command === 'config') showAiConfigDialog.value = true
+  else if (command === 'config' && isAdmin) showAiConfigDialog.value = true
+  else if (command === 'group-settings' && isAdmin) router.push('/admin?tab=governance&settings=tenants')
   else if (command === 'account') router.push('/account')
   else if (command === 'admin') router.push('/admin')
   else if (command === 'logout') logout()
@@ -476,6 +472,7 @@ const dramas = ref([])
 const omniProjects = ref([])
 const workspaceAssets = ref([])
 const workspaceVideos = ref([])
+const defaultHeroVideos = ref([])
 const total = ref(0)
 const recordQuery = ref('')
 const recordFilter = ref('all')
@@ -483,6 +480,8 @@ const recordsOpen = ref(false)
 const recordsSection = ref(null)
 const heroVideoFailed = ref(false)
 const heroVideoIndex = ref(0)
+/** 主页背景展示模式：default=系统默认兜底；recent=自己的最近作品。默认兜底，切换才显示最近。 */
+const heroMode = ref('default')
 const heroVideoLayers = ref([])
 let heroRotationTimer = null
 let heroVideoLayerSequence = 0
@@ -505,7 +504,7 @@ function assetMediaUrl(asset) {
 const heroMedia = computed(() => workspaceAssets.value.filter(asset => assetCoverUrl(asset)).slice(0, 10))
 const heroVideos = computed(() => {
   const seen = new Set()
-  return [...workspaceVideos.value]
+  const recentVideos = [...workspaceVideos.value]
     .filter(video => video.status === 'completed' && assetMediaUrl(video))
     .map(video => ({ key: `video-${video.id}-${assetMediaUrl(video)}`, url: assetMediaUrl(video), projectId: video.drama_id || null }))
     .filter(video => {
@@ -515,6 +514,17 @@ const heroVideos = computed(() => {
     })
     // 主页只保留最近四条，控制预加载数量；同一项目的多个成片也属于可轮播作品。
     .slice(0, 4)
+  // 默认展示系统默认兜底资源；仅当用户手动切换到「最近作品」模式才展示自己的成片。
+  const defaults = defaultHeroVideos.value
+    .filter(video => video.status === 'completed' && (video.oss_url || assetMediaUrl(video)))
+    .map(video => ({ key: `default-video-${video.id}-${(video.oss_url || assetMediaUrl(video))}`, url: video.oss_url || assetMediaUrl(video), projectId: null }))
+    .filter(video => {
+      if (seen.has(video.url)) return false
+      seen.add(video.url)
+      return true
+    })
+    .slice(0, 3)
+  return heroMode.value === 'recent' ? (recentVideos.length ? recentVideos : defaults) : (defaults.length ? defaults : recentVideos)
 })
 const activeHeroVideo = computed(() => heroVideos.value[heroVideoIndex.value] || null)
 const nextHeroVideo = computed(() => heroVideos.value.length > 1 ? heroVideos.value[(heroVideoIndex.value + 1) % heroVideos.value.length] : null)
@@ -558,6 +568,7 @@ function scheduleHeroRotation() {
   stopHeroRotation()
   if (heroVideos.value.length > 1) heroRotationTimer = window.setTimeout(advanceHeroVideo, 9000)
 }
+function switchHeroMode(mode) { if (heroMode.value === mode) return; heroMode.value = mode; heroVideoIndex.value = 0 }
 function selectHeroVideo(index) {
   if (!heroVideos.value.length) return
   heroVideoIndex.value = (index + heroVideos.value.length) % heroVideos.value.length
@@ -786,7 +797,7 @@ const showNewDialog = ref(false)
 const newForm = ref({ title: '', description: '', aspect_ratio: '16:9' })
 const newSaving = ref(false)
 const exportingId = ref(null)
-const isAdmin = JSON.parse(localStorage.getItem('lmd_auth_user') || '{}').role === 'admin'
+const isAdmin = JSON.parse(localStorage.getItem('lmd_auth_user') || '{}').console_access === true
 const importing = ref(false)
 const importFileInput = ref(null)
 
@@ -819,16 +830,17 @@ const editSaving = ref(false)
 
 function loadList() {
   loading.value = true
-  Promise.all([dramaAPI.list({ page: 1, page_size: 50 }), omniVideoAPI.listSequences(), omniVideoAPI.assets({ page: 1, page_size: 40 }).catch(() => ({ items: [] })), videosAPI.list({ page: 1, page_size: 12, status: 'completed' }).catch(() => ({ items: [] }))])
-    .then(([dramaResult, omniResult, assetResult, videoResult]) => {
+  Promise.all([dramaAPI.list({ page: 1, page_size: 50 }), omniVideoAPI.listSequences(), omniVideoAPI.assets({ page: 1, page_size: 40 }).catch(() => ({ items: [] })), videosAPI.list({ page: 1, page_size: 12, status: 'completed' }).catch(() => ({ items: [] })), videosAPI.defaultHomepageVideos().catch(() => [])])
+    .then(([dramaResult, omniResult, assetResult, videoResult, defaultVideoResult]) => {
       dramas.value = dramaResult?.items ?? []
       total.value = dramaResult?.pagination?.total ?? 0
       omniProjects.value = omniResult ?? []
       workspaceAssets.value = assetResult?.items ?? []
       workspaceVideos.value = videoResult?.items ?? []
+      defaultHeroVideos.value = Array.isArray(defaultVideoResult) ? defaultVideoResult : (defaultVideoResult?.items ?? [])
       heroVideoFailed.value = false
     })
-    .catch(() => { dramas.value = []; omniProjects.value = []; workspaceAssets.value = []; workspaceVideos.value = [] })
+    .catch(() => { dramas.value = []; omniProjects.value = []; workspaceAssets.value = []; workspaceVideos.value = []; defaultHeroVideos.value = [] })
     .finally(() => { loading.value = false })
 }
 
@@ -1056,6 +1068,8 @@ async function onDelete(d) {
 onMounted(async () => {
   loadList()
   loadExamples()
+  // 供应商锁仅属于运营配置；普通创作账号不应请求管理员端点。
+  if (!isAdmin) return
   try {
     const lock = await aiAPI.getVendorLock()
     vendorLockEnabled.value = !!lock?.enabled
@@ -2085,7 +2099,7 @@ html.light .project-card{background:rgba(255,255,255,.72)!important}
 
 /* The home is a real moving-video stage. The project rail is intentionally quiet. */
 .media-stage-content{width:min(38rem,44vw);padding:clamp(3rem,7vh,6rem) clamp(2.5rem,5vw,5.5rem)}.media-stage-content h2{max-width:none;font-size:clamp(3.5rem,5.3vw,6.15rem);line-height:.94;white-space:nowrap}.focus-current{display:grid;gap:.22rem;max-width:25rem;margin:1rem 0 1.35rem}.focus-current span{color:#9ff6df;font-size:.6rem;font-weight:750;letter-spacing:.12em}.focus-current b{overflow:hidden;color:rgba(255,255,255,.92);font-size:1rem;text-overflow:ellipsis;white-space:nowrap}.focus-current em{color:rgba(255,255,255,.55);font-size:.68rem;font-style:normal}.focus-current--empty{display:block;color:rgba(255,255,255,.64);font-size:.8rem}.stage-actions{margin-top:0}.stage-data{gap:2rem;margin-top:1.35rem;padding-top:.8rem}.stage-data dt{font-size:1.25rem}
-.hero-video-controls{display:flex;align-items:center;gap:.65rem;margin-top:1.45rem}.hero-video-controls button{display:grid;width:1.8rem;height:1.8rem;place-items:center;padding:0;border:1px solid rgba(255,255,255,.28);border-radius:50%;background:rgba(7,10,15,.38);color:#fff;cursor:pointer}.hero-video-controls button:hover{border-color:#fff;background:rgba(255,255,255,.16)}.hero-video-count{min-width:3.5rem;color:rgba(255,255,255,.58);font:700 .62rem/1 ui-monospace,monospace;letter-spacing:.08em;text-align:center}
+.hero-mode-switch{display:inline-flex;gap:.35rem;margin-top:1.45rem;padding:.22rem;border:1px solid rgba(255,255,255,.22);border-radius:999px;background:rgba(7,10,15,.38)}.hero-mode-switch button{border:0;padding:.28rem .8rem;border-radius:999px;background:transparent;color:rgba(255,255,255,.62);font-size:.72rem;cursor:pointer;transition:background .15s,color .15s}.hero-mode-switch button.active{background:#fff;color:#0b0f17;font-weight:700}.hero-video-controls{display:flex;align-items:center;gap:.65rem;margin-top:1.45rem}.hero-video-controls button{display:grid;width:1.8rem;height:1.8rem;place-items:center;padding:0;border:1px solid rgba(255,255,255,.28);border-radius:50%;background:rgba(7,10,15,.38);color:#fff;cursor:pointer}.hero-video-controls button:hover{border-color:#fff;background:rgba(255,255,255,.16)}.hero-video-count{min-width:3.5rem;color:rgba(255,255,255,.58);font:700 .62rem/1 ui-monospace,monospace;letter-spacing:.08em;text-align:center}
 .records-jump{right:clamp(2rem,3vw,3.8rem);top:2.15rem;width:8.3rem;padding:.75rem 0}.records-jump b{font-size:1.65rem}.records-jump i{grid-column:1/3;color:rgba(255,255,255,.48);font-size:.58rem;font-style:normal}.recent-stack{right:clamp(2rem,3vw,3.8rem);top:8.1rem;width:min(20rem,20vw);border:1px solid rgba(255,255,255,.2);background:rgba(7,10,15,.38);backdrop-filter:blur(.8rem)}.recent-stack>p{margin:0;padding:.7rem .7rem .35rem;color:rgba(255,255,255,.54);font-size:.58rem;font-weight:740;letter-spacing:.12em}.recent-stack button{grid-template-columns:2.5rem minmax(0,1fr) auto;min-height:4.35rem;padding:.45rem .65rem;background:transparent}.recent-thumb{width:2.5rem;height:2.5rem}.recent-stack b{margin:.18rem 0;font-size:.75rem}.recent-stack em{font-size:.56rem}.recent-stack small{font-size:.5rem}
 .recent-stack button:nth-of-type(n+3){display:none}@media (min-width:86.01rem){.recent-stack button:nth-of-type(n+3){display:grid}}
 @media (max-width:86rem) and (min-width:70.01rem){.recent-stack button:nth-child(n+3){display:grid}.recent-stack button:nth-of-type(n+3){display:none}}

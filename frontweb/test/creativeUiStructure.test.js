@@ -150,6 +150,53 @@ test('运营账本提供日期和角色筛选，列表操作保持中性层级',
   assert.match(source, /\.balance-adjust-action\)\{padding:\.28rem/)
 })
 
+test('运营后台支持查看和调整用户项目分组', async () => {
+  const source = await readSource('../src/views/AdminConsole.vue')
+
+  assert.match(source, /label="项目分组"/)
+  assert.match(source, /openUserGroup/)
+  assert.match(source, /saveUserGroup/)
+  assert.match(source, /adminAPI\.setTenantMember/)
+  assert.match(source, /使用所选分组绑定的 API 与价目表/)
+})
+
+test('创作账号不再加载运营专属 AI 配置资源，管理员可直达项目分组 API 设置', async () => {
+  const [film, filmList, config, header, admin] = await Promise.all([
+    readSource('../src/views/FilmCreate.vue'),
+    readSource('../src/views/FilmList.vue'),
+    readSource('../src/components/AIConfigContent.vue'),
+    readSource('../src/components/ui/AppHeader.vue'),
+    readSource('../src/views/AdminConsole.vue'),
+  ])
+
+  assert.match(film, /v-if="isAdmin" class="btn-ai-config"/)
+  assert.match(film, /v-if="isAdmin" v-model="showAiConfigDialog"/)
+  assert.match(film, /由项目分组统一配置/)
+  assert.match(filmList, /if \(!isAdmin\) return/)
+  assert.match(config, /user\?\.console_access !== true/)
+  assert.match(header, /command="group-settings"/)
+  assert.match(header, /项目分组 API/)
+  assert.match(admin, /route\.query\.settings === 'tenants'/)
+  assert.match(admin, /AI \/ SD2 配置/)
+  assert.match(admin, /:tenant-id="configTenant.id"/)
+})
+
+test('项目分组从专属 AI／SD2 页面维护默认配置，价目保存不覆盖绑定', async () => {
+  const [source, aiConfig] = await Promise.all([
+    readSource('../src/views/AdminConsole.vue'),
+    readSource('../src/components/AIConfigContent.vue'),
+  ])
+
+  assert.match(source, /AI \/ SD2 配置/)
+  assert.match(source, /:tenant-id="configTenant.id"/)
+  assert.match(source, /保存价目不会改动这些配置/)
+  assert.match(source, /ai_configs: \(tenant\.configs \|\| \[\]\)\.map/)
+  assert.match(source, /adminAPI\.updateTenant\(tenantForm\.id, \{ name: tenantForm\.name\.trim\(\) \}\)/)
+  assert.doesNotMatch(source, /v-model="tenantForm\.name" :disabled="!!tenantForm\.id"/)
+  assert.match(aiConfig, /const tenantId = computed/)
+  assert.match(aiConfig, /tenant_id: tenantId\.value/)
+})
+
 test('运营工作台把纵向滚动交给页面，表格只承接横向滚动', async () => {
   const source = await readSource('../src/views/AdminConsole.vue')
 
@@ -227,6 +274,15 @@ test('主页使用本地完成视频组成可控轮播舞台', async () => {
   assert.match(source, /@error="discardHeroVideoLayer\(layer\.id\)"/)
   assert.match(source, /class="hero-video-controls"/)
   assert.match(source, /onBeforeUnmount\(\(\) => \{ stopHeroRotation\(\); window\.clearTimeout\(heroVideoLayerTransitionTimer\) \}\)/)
+})
+
+test('无作品账号使用固定的全局默认媒体资源', async () => {
+  const source = await readSource('../src/views/FilmList.vue')
+  assert.match(source, /const defaultHeroVideos = ref\(\[\]\)/)
+  assert.match(source, /videosAPI\.defaultHomepageVideos\(\)/)
+  assert.match(source, /recentVideos\.length \? recentVideos : defaults/)
+  assert.match(source, /\.slice\(0, 3\)/)
+  assert.doesNotMatch(source, /MediaRecorder|captureStream\(/)
 })
 
 test('单集项目页使用紧凑的制作概览而非展示型大标题', async () => {

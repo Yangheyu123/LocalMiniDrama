@@ -40,7 +40,7 @@ const account = ref({})
 const transactions = ref([])
 const transactionPage = reactive({ page: 1, page_size: 20, total: 0 })
 const models = ref([])
-const isAdmin = JSON.parse(localStorage.getItem('lmd_auth_user') || '{}').role === 'admin'
+const isAdmin = JSON.parse(localStorage.getItem('lmd_auth_user') || '{}').console_access === true
 const password = reactive({ old_password: '', new_password: '' })
 const username = ref(JSON.parse(localStorage.getItem('lmd_auth_user') || '{}').username || '')
 const accountTab = ref('overview')

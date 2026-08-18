@@ -1,6 +1,7 @@
 const auth = require('../services/authService');
 const billing = require('../services/billingService');
 const operations = require('../services/adminOperationsService');
+const tenants = require('../services/tenantService');
 const response = require('../response');
 
 module.exports = function adminRoutes(db, log = console) {
@@ -22,12 +23,40 @@ module.exports = function adminRoutes(db, log = console) {
     users: (_req, res) => response.success(res, billing.listUsers(db)),
     createUser: guarded((req, res) => {
       const user = auth.createUser(db, req.body || {}, req.auth.id);
-      billing.audit(db, req.auth.id, 'user.create', 'user', user.id, { username: user.username, role: user.role });
+      const tenantId = Number(req.body?.tenant_id);
+      if (Number.isSafeInteger(tenantId) && tenantId > 0) tenants.setMember(db, tenantId, user.id, req.body?.tenant_role);
+      billing.audit(db, req.auth.id, 'user.create', 'user', user.id, { username: user.username, role: user.role, account_kind: user.account_kind || 'creator', tenant_id: tenantId || null });
       response.created(res, auth.publicUser(user));
     }),
     updateUser: guarded((req, res) => {
       const user = auth.updateUser(db, Number(req.params.id), req.body || {}); if (!user) return response.notFound(res, '用户不存在');
-      billing.audit(db, req.auth.id, 'user.update', 'user', user.id, { role: user.role, is_active: user.is_active }); response.success(res, auth.publicUser(user));
+      billing.audit(db, req.auth.id, 'user.update', 'user', user.id, { role: user.role, account_kind: user.account_kind || 'creator', is_active: user.is_active }); response.success(res, auth.publicUser(user));
+    }),
+    tenants: (_req, res) => response.success(res, tenants.listTenants(db)),
+    tenant: (req, res) => {
+      const tenant = tenants.tenantDetail(db, Number(req.params.id));
+      return tenant ? response.success(res, tenant) : response.notFound(res, '分组不存在');
+    },
+    createTenant: guarded((req, res) => {
+      const tenant = tenants.writeTenant(db, req.auth.id, req.body || {});
+      billing.audit(db, req.auth.id, 'tenant.create', 'tenant', tenant.id, { name: tenant.name });
+      response.created(res, tenant);
+    }),
+    updateTenant: guarded((req, res) => {
+      const tenant = tenants.writeTenant(db, req.auth.id, req.body || {}, Number(req.params.id));
+      if (!tenant) return response.notFound(res, '分组不存在');
+      billing.audit(db, req.auth.id, 'tenant.update', 'tenant', tenant.id, { name: tenant.name, status: tenant.status });
+      response.success(res, tenant);
+    }),
+    setTenantMember: guarded((req, res) => {
+      const tenant = tenants.setMember(db, Number(req.params.id), Number(req.params.userId), req.body?.role);
+      billing.audit(db, req.auth.id, 'tenant.member.set', 'tenant', tenant.id, { user_id: Number(req.params.userId), role: req.body?.role || 'creator' });
+      response.success(res, tenant);
+    }),
+    replaceTenantBindings: guarded((req, res) => {
+      const tenant = tenants.replaceBindings(db, Number(req.params.id), req.body || {});
+      billing.audit(db, req.auth.id, 'tenant.bindings.replace', 'tenant', tenant.id, { ai_config_ids: req.body?.ai_config_ids || [], sd2_config_ids: req.body?.sd2_config_ids || [], price_book_id: req.body?.price_book_id || null });
+      response.success(res, tenant);
     }),
     adjust: guarded((req, res) => {
       const body = req.body || {};

@@ -103,6 +103,43 @@ function list(db, query) {
   return { items: rows.map((row) => rowToItem(withTaskProgress(db, row))), total, page, pageSize };
 }
 
+/**
+ * 产品展示位使用固定的全局媒体清单，不从任何用户（包括管理员）的作品列表
+ * 动态挑选。这样账号创建、管理员清理作品或作品排序变化都不会改变新用户看到的
+ * 默认轮播。清单仅接受相对的本地视频路径，避免重新暴露供应商临时 URL。
+ */
+function listHomepageDefaultVideos(db, limit = 3) {
+  const configured = require('./settingsService').getGlobalSetting(db, 'homepage_default_video_paths', []);
+  const pageSize = Math.min(3, Math.max(1, Number(limit) || 3));
+  const allowedPath = (value) => {
+    const normalized = String(value || '').replace(/\\/g, '/').replace(/^\/+/, '');
+    return normalized && !normalized.split('/').includes('..') && /\.(?:mp4|webm|mov|m4v)$/i.test(normalized) ? normalized : '';
+  };
+  // OSS 镜像：默认资源已归档到对象存储时返回 CDN 地址，供线上渲染使用。
+  // 前端优先用 oss_url，本地无法访问 CDN 时回退到本地 /static 路径。
+  const CDN_BASE = 'https://cdn.ai.tensorbytes.com/';
+  const ossByPath = new Map();
+  try {
+    db.prepare("SELECT local_path, oss_key FROM media_archive_records WHERE archive_status = 'oss_synced' AND oss_key IS NOT NULL").all()
+      .forEach((r) => { if (r.local_path) ossByPath.set(String(r.local_path).replace(/^\/+/, ''), CDN_BASE + r.oss_key); });
+  } catch (_) {}
+  return (Array.isArray(configured) ? configured : [])
+    .map(allowedPath)
+    .filter(Boolean)
+    .slice(0, pageSize)
+    .map((localPath, index) => ({
+      // 固定 key 使前端在同一份资源清单内稳定切换；不关联用户或作品记录。
+      id: `global-default-${index + 1}`,
+      drama_id: null,
+      status: 'completed',
+      local_path: localPath,
+      video_url: `/static/${localPath}`,
+      oss_url: ossByPath.get(localPath) || null,
+      created_at: null,
+      updated_at: null,
+    }));
+}
+
 function withTaskProgress(db, row) {
   if (!row?.task_id) return row;
   const task = db.prepare('SELECT progress, message, updated_at FROM async_tasks WHERE id=? AND deleted_at IS NULL').get(row.task_id);
@@ -703,7 +740,7 @@ async function resumePollForVideoGeneration(db, log, videoGenId) {
   const providerTaskId = row.provider_task_id && String(row.provider_task_id).trim();
   if (!providerTaskId) return;
 
-  const config = videoClient.getDefaultVideoConfig(db, row.model);
+  const config = videoClient.getDefaultVideoConfig(db, row.model, row.tenant_id ? { tenant_id: row.tenant_id } : {});
   if (!config) {
     const now = new Date().toISOString();
     setVideoGenFailed(db, videoGenId, '未配置视频模型', now);
@@ -884,7 +921,7 @@ async function processVideoGeneration(db, log, videoGenId) {
     const storageLocalPath = path.isAbsolute(cfg.storage?.local_path)
       ? cfg.storage.local_path
       : path.join(process.cwd(), cfg.storage?.local_path || './data/storage');
-    const config = videoClient.getDefaultVideoConfig(db, row.model);
+    const config = videoClient.getDefaultVideoConfig(db, row.model, row.tenant_id ? { tenant_id: row.tenant_id } : {});
     if (!config) {
       setVideoGenFailed(db, videoGenId, '未配置视频模型', now);
       if (row.task_id) taskService.updateTaskError(db, row.task_id, '未配置视频模型');
@@ -1033,6 +1070,7 @@ function deleteById(db, log, id) {
 module.exports = {
   setVideoGenFailed,
   list,
+  listHomepageDefaultVideos,
   getById,
   deleteById,
   processVideoGeneration,

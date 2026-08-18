@@ -40,7 +40,8 @@
             <el-dropdown-menu>
               <el-dropdown-item command="theme"><el-icon><Sunny /></el-icon>{{ isDark ? '切换浅色模式' : '切换深色模式' }}</el-dropdown-item>
               <el-dropdown-item command="account"><el-icon><User /></el-icon>账户中心</el-dropdown-item>
-              <el-dropdown-item command="config"><el-icon><Setting /></el-icon>AI 配置</el-dropdown-item>
+              <el-dropdown-item v-if="isAdmin" command="config"><el-icon><Setting /></el-icon>AI 配置</el-dropdown-item>
+              <el-dropdown-item v-if="isAdmin" command="group-settings"><el-icon><DataAnalysis /></el-icon>项目分组 API</el-dropdown-item>
               <el-dropdown-item command="deleted"><el-icon><Delete /></el-icon>已删除项目</el-dropdown-item>
               <el-dropdown-item v-if="isAdmin" divided command="admin"><el-icon><DataAnalysis /></el-icon>运营后台</el-dropdown-item>
               <el-dropdown-item divided command="logout"><el-icon><SwitchButton /></el-icon>退出登录</el-dropdown-item>
