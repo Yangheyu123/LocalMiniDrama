@@ -8,7 +8,7 @@ const router = createRouter({
     {
       path: '/create',
       name: 'free-create',
-      component: () => import('./views/Home.vue'),
+      component: () => import('./views/FreeCreate.vue'),
     },
     { path: '/:pathMatch(.*)*', redirect: '/create?episode_id=1' },
   ],
